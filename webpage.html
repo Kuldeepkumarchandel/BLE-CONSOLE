@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BLE Communication Console</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        /* General Styles */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #0e0f2b, #2e1e57);
+            color: #dcdcdc;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            color: #ffdd57;
+            text-shadow: 2px 2px 8px #000;
+            margin-bottom: 30px;
+            font-weight: bold;
+        }
+
+        /* Button Styles */
+        .btn {
+            padding: 12px;
+            font-size: 24px; /* Increase font size for icons */
+            margin-left: 10px; /* Add margin to separate buttons from inputs */
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            color: #fff;
+            transition: background-color 0.3s, transform 0.3s;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+        #connectDisconnectBtn {
+            background: linear-gradient(145deg, #dc3545, #c82333); /* Red for disconnected */
+        }
+        #sendBtn { background: linear-gradient(145deg, #17a2b8, #138496); }
+        #sendFileBtn { background: linear-gradient(145deg, #ffc107, #d39e00); }
+
+        .btn:hover { transform: translateY(-3px); }
+        .btn:disabled { background-color: #6c757d; cursor: not-allowed; }
+
+        /* Input and Console Styles */
+        #commandInput, #fileInput {
+            padding: 12px;
+            font-size: 16px;
+            width: 60%;
+            max-width: 400px;
+            margin: 10px 0;
+            border-radius: 25px;
+            border: 2px solid #ffdd57;
+            background-color: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            text-align: center;
+            transition: border 0.3s;
+        }
+        #commandInput:focus, #fileInput:focus {
+            border-color: #ffdd57;
+            outline: none;
+        }
+        #console {
+            margin-top: 20px;
+            padding: 20px;
+            width: 80%;
+            max-width: 600px;
+            height: 300px;
+            overflow-y: auto;
+            border-radius: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+            color: #eee;
+            font-size: 14px;
+            border: 2px solid #ffdd57;
+        }
+
+        .log {
+            padding: 8px;
+            margin-bottom: 5px;
+            border-radius: 8px;
+        }
+        .log.sent { background: rgba(40, 167, 69, 0.2); }
+        .log.received { background: rgba(23, 162, 184, 0.2); }
+        .log.error { background: rgba(220, 53, 69, 0.2); }
+
+        /* Status Indicator */
+        #status {
+            font-size: 18px;
+            font-weight: bold;
+            margin-top: 10px;
+            text-shadow: 1px 1px 5px #000;
+            color: #ffc107;
+        }
+
+        /* Flex container for inputs and buttons */
+        .input-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 10px 0;
+        }
+
+        .icon-btn {
+            font-size: 24px; /* Adjust icon size */
+            width: 40px; /* Set width to align buttons */
+            height: 40px; /* Set height to align buttons */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>BLE Communication Console</h1>
+    
+    <button id="connectDisconnectBtn" class="btn">Connect</button>
+    <div id="status">Status: Disconnected</div>
+    
+    <div class="input-container">
+        <input type="text" id="commandInput" placeholder="Enter command" disabled>
+        <button id="sendBtn" class="btn icon-btn" disabled>
+            <i class="fas fa-paper-plane"></i>
+        </button>
+    </div>
+
+    <div class="input-container">
+        <input type="file" id="fileInput" disabled>
+        <button id="sendFileBtn" class="btn icon-btn" disabled>
+            <i class="fas fa-upload"></i>
+        </button>
+    </div>
+
+    <div id="console"></div>
+
+    <script>
+        let bleDevice, server, characteristic;
+        const connectDisconnectBtn = document.getElementById("connectDisconnectBtn");
+        const commandInput = document.getElementById("commandInput");
+        const sendBtn = document.getElementById("sendBtn");
+        const fileInput = document.getElementById("fileInput");
+        const sendFileBtn = document.getElementById("sendFileBtn");
+        const consoleDiv = document.getElementById("console");
+        const statusDiv = document.getElementById("status");
+
+        function log(message, type = 'info') {
+            const logDiv = document.createElement("div");
+            logDiv.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.classList.add("log", type);
+            consoleDiv.appendChild(logDiv);
+            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+        }
+
+        connectDisconnectBtn.addEventListener("click", async () => {
+            if (!bleDevice || !bleDevice.gatt.connected) {
+                try {
+                    log("Scanning for BLE devices...");
+                    bleDevice = await navigator.bluetooth.requestDevice({
+                        filters: [{ services: [0x00ff] }]
+                    });
+                    log(`Device found: ${bleDevice.name || 'Unnamed Device'}`);
+                    
+                    log(`Connecting to ${bleDevice.name || 'Device'}...`);
+                    server = await bleDevice.gatt.connect();
+                    statusDiv.textContent = "Status: Connected";
+                    connectDisconnectBtn.textContent = "Disconnect";
+                    connectDisconnectBtn.style.background = "linear-gradient(145deg, #28a745, #1e7e34)"; // Green for connected
+                    commandInput.disabled = false;
+                    sendBtn.disabled = false;
+                    fileInput.disabled = false;
+                    sendFileBtn.disabled = false;
+
+                    bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+                    log("Connecting to specified service and characteristic...");
+                    const service = await server.getPrimaryService(0x00ff);
+                    characteristic = await service.getCharacteristic(0xff01);
+
+                    if (characteristic.properties.notify) {
+                        await characteristic.startNotifications();
+                        characteristic.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
+                        log("Notifications enabled on characteristic 0xff01.");
+                    }
+
+                    log("Connected to the service and characteristic.");
+                } catch (error) {
+                    log("Connection failed: " + error.message, 'error');
+                }
+            } else {
+                bleDevice.gatt.disconnect();
+                log("Disconnected from device.");
+            }
+        });
+
+        function onDisconnected() {
+            statusDiv.textContent = "Status: Disconnected";
+            connectDisconnectBtn.textContent = "Connect";
+            connectDisconnectBtn.style.background = "linear-gradient(145deg, #dc3545, #c82333)"; // Red for disconnected
+            commandInput.disabled = true;
+            sendBtn.disabled = true;
+            fileInput.disabled = true;
+            sendFileBtn.disabled = true;
+            log("Device disconnected");
+        }
+
+        sendBtn.addEventListener("click", async () => {
+            const command = commandInput.value;
+            if (!command) return log("Enter a command to send.", 'error');
+
+            try {
+                const encoder = new TextEncoder();
+                const data = encoder.encode(command);
+                await characteristic.writeValue(data);
+                log(`Sent: ${command}`, 'sent');
+            } catch (error) {
+                log("Send failed: " + error.message, 'error');
+            }
+        });
+
+        sendFileBtn.addEventListener("click", async () => {
+            const file = fileInput.files[0];
+            if (!file) return log("No file selected.", 'error');
+
+            const fileName = file.name;
+            const fileSize = file.size;
+            const packetSize = 500; // Define packet size
+            const totalPackets = Math.ceil(fileSize / packetSize);
+
+            const firstPacketData = `${fileName},${fileSize},${totalPackets}`;
+            const firstPacket = prepareFirstPacket(firstPacketData);
+            await sendPacket(firstPacket);
+            
+            const fileReader = new FileReader();
+            fileReader.onload = async (event) => {
+                const data = new Uint8Array(event.target.result);
+                let offset = 0;
+
+                while (offset < data.length) {
+                    const chunk = data.slice(offset, offset + packetSize);
+                    const dataPacket = prepareDataPacket(chunk);
+                    await sendPacket(dataPacket);
+                    offset += chunk.length;
+                }
+            };
+
+            fileReader.readAsArrayBuffer(file);
+        });
+
+        async function setMTU(mtu) {
+            await characteristic.writeValueWithResponse(new Uint8Array([mtu]));
+            log(`MTU set to ${mtu}.`);
+        }
+
+        function prepareFirstPacket(data) {
+            const checksum = CALC_CHECKSUM(data);
+            const checkXor = CALC_CHECKXOR(data);
+            return `FTP,${data},${checksum.toString(16).padStart(2, '0')}${checkXor.toString(16).padStart(2, '0')}&`;
+        }
+
+        function prepareDataPacket(data) {
+            const checksum = CALC_CHECKSUM(data);
+            const checkXor = CALC_CHECKXOR(data);
+            return `FTDATA${Array.from(data).map(b => b.toString(16).padStart(2, '0')).join('')}${checksum.toString(16).padStart(2, '0')}${checkXor.toString(16).padStart(2, '0')}`;
+        }
+
+        async function sendPacket(packet) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(packet);
+            await characteristic.writeValue(data);
+            log(`Sent packet: ${packet}`, 'sent');
+            await waitForResponse();
+        }
+
+        async function waitForResponse() {
+            return new Promise((resolve) => {
+                const handleResponse = (event) => {
+                    const response = new TextDecoder().decode(event.target.value);
+                    log(`Received response: ${response}`, 'received');
+                    resolve(response);
+                };
+
+                characteristic.addEventListener('characteristicvaluechanged', handleResponse);
+            });
+        }
+
+        function handleCharacteristicValueChanged(event) {
+            const value = event.target.value;
+            const response = new TextDecoder().decode(value);
+            log(`Received: ${response}`, 'received');
+        }
+
+        function CALC_CHECKSUM(data) {
+            let checksum = 0;
+            for (let i = 0; i < data.length; i++) {
+                checksum += data[i];
+            }
+            return checksum & 0xFF; // Return the last byte as checksum
+        }
+
+        function CALC_CHECKXOR(data) {
+            let checkXor = 0;
+            for (let i = 0; i < data.length; i++) {
+                checkXor ^= data[i];
+            }
+            return checkXor & 0xFF; // Return the last byte as checkXor
+        }
+    </script>
+</body>
+</html>
